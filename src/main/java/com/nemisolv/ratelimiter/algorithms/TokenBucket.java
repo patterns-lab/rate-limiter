@@ -1,100 +1,206 @@
 package com.nemisolv.ratelimiter.algorithms;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Triển khai thuật toán Rate Limiting: Token Bucket.
+ * Corrected Token Bucket implementation for rate limiting.
  *
- * <p>Thuật toán này sử dụng một "thùng" chứa "token".
- * Token được thêm vào thùng với một tốc độ không đổi (refillRate).
- * Thùng có một sức chứa tối đa (capacity).
+ * <p>This algorithm uses a "bucket" containing "tokens".
+ * Tokens are added to the bucket at a constant rate (refillRate).
+ * The bucket has a maximum capacity.
  *
- * <p>Mỗi yêu cầu đến sẽ cố gắng lấy 1 token:
- * - Nếu còn token, yêu cầu được chấp nhận.
- * - Nếu hết token, yêu cầu bị từ chối.
+ * <p>Each incoming request tries to consume tokens:
+ * - If enough tokens are available, the request is allowed.
+ * - If insufficient tokens, the request is rejected.
  *
- * <p>Lớp này được thiết kế để an toàn khi chạy đa luồng (thread-safe)
- * bằng cách sử dụng "synchronized" cho phương thức then chốt.
+ * <p>This implementation uses proper synchronization:
+ * - Single ReentrantLock for all operations (since all are write operations)
+ * - Plain long variables (no AtomicLong needed)
+ * - Atomic operations protected by the lock
  */
 public class TokenBucket {
 
     /**
-     * Sức chứa tối đa của thùng.
+     * Maximum capacity of the bucket.
      */
     private final long capacity;
 
     /**
-     * Số lượng token được thêm vào thùng MỖI GIÂY.
+     * Number of tokens added to the bucket per second.
      */
     private final long tokensPerSecond;
 
     /**
-     * Số lượng token hiện tại trong thùng.
+     * Current number of tokens in the bucket.
      */
     private long currentTokens;
 
     /**
-     * Mốc thời gian (nano giây) lần cuối cùng token được nạp lại.
+     * Last refill timestamp in nanoseconds.
      */
     private long lastRefillNanos;
 
     /**
-     * Khởi tạo một Token Bucket mới.
+     * Single lock for all operations (since all are write operations).
+     */
+    private final ReentrantLock lock = new ReentrantLock();
+
+    /**
+     * Creates a new Token Bucket with validation.
      *
-     * @param capacity Sức chứa tối đa (ví dụ: 100).
-     * @param tokensPerSecond Tốc độ nạp token (ví dụ: 10 token/giây).
+     * @param capacity Maximum capacity (must be > 0)
+     * @param tokensPerSecond Refill rate (must be > 0)
+     * @throws IllegalArgumentException if parameters are invalid
      */
     public TokenBucket(long capacity, long tokensPerSecond) {
+        validateParameters(capacity, tokensPerSecond);
+        
         this.capacity = capacity;
         this.tokensPerSecond = tokensPerSecond;
-
-        // Khởi tạo thùng đầy token
         this.currentTokens = capacity;
         this.lastRefillNanos = System.nanoTime();
     }
 
     /**
-     * Cố gắng tiêu thụ một token từ thùng.
+     * Attempts to consume a single token from the bucket.
      *
-     * <p>Đây là phương thức "synchronized" để đảm bảo an toàn luồng.
-     *
-     * @return true nếu tiêu thụ thành công (cho phép yêu cầu),
-     * false nếu hết token (từ chối yêu cầu).
+     * @return true if consumption successful (request allowed),
+     *         false if insufficient tokens (request rejected)
      */
-    public synchronized boolean tryConsume() {
-        // 1. Nạp lại token trước khi kiểm tra
-        refill();
-
-        // 2. Kiểm tra xem có đủ token để tiêu thụ không
-        if (currentTokens > 0) {
-            // Tiêu thụ 1 token
-            currentTokens--;
-            return true;
-        }
-
-        // Hết token
-        return false;
+    public boolean tryConsume() {
+        return tryConsume(1);
     }
 
     /**
-     * Phương thức nội bộ để nạp lại token dựa trên thời gian đã trôi qua.
+     * Attempts to consume multiple tokens from the bucket.
+     *
+     * @param tokens Number of tokens to consume (must be > 0)
+     * @return true if consumption successful, false otherwise
+     * @throws IllegalArgumentException if tokens <= 0
+     */
+    public boolean tryConsume(long tokens) {
+        if (tokens <= 0) {
+            throw new IllegalArgumentException("Tokens to consume must be positive");
+        }
+
+        lock.lock();
+        try {
+            refill();
+            
+            if (currentTokens >= tokens) {
+                currentTokens -= tokens;
+                return true;
+            }
+            return false;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Gets the current number of tokens in the bucket.
+     *
+     * @return Current token count
+     */
+    public long getCurrentTokens() {
+        lock.lock();
+        try {
+            refill();
+            return currentTokens;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Gets the bucket capacity.
+     *
+     * @return Maximum capacity
+     */
+    public long getCapacity() {
+        return capacity;
+    }
+
+    /**
+     * Gets the refill rate in tokens per second.
+     *
+     * @return Tokens per second
+     */
+    public long getTokensPerSecond() {
+        return tokensPerSecond;
+    }
+
+    /**
+     * Estimates time until next token is available.
+     *
+     * @return Estimated milliseconds until next token, or 0 if tokens available
+     */
+    public long getTimeToNextToken() {
+        lock.lock();
+        try {
+            refill();
+            if (currentTokens > 0) {
+                return 0;
+            }
+            
+            long now = System.nanoTime();
+            long nanosSinceRefill = now - lastRefillNanos;
+            
+            // Time needed for one token at current rate
+            long nanosPerToken = TimeUnit.SECONDS.toNanos(1) / tokensPerSecond;
+            long nanosUntilNextToken = nanosPerToken - (nanosSinceRefill % nanosPerToken);
+            
+            return TimeUnit.NANOSECONDS.toMillis(nanosUntilNextToken);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Refills tokens based on elapsed time using precise arithmetic.
      */
     private void refill() {
         long now = System.nanoTime();
+        long nanosSinceLastRefill = now - lastRefillNanos;
         
-        // Thời gian trôi qua (tính bằng giây) kể từ lần nạp cuối
-        double secondsSinceLastRefill = (double) (now - lastRefillNanos) / TimeUnit.SECONDS.toNanos(1);
+        // Calculate nanoseconds per token
+        long nanosPerToken = TimeUnit.SECONDS.toNanos(1) / tokensPerSecond;
+        
+        if (nanosSinceLastRefill < nanosPerToken) {
+            // Not enough time has passed for even one token
+            return;
+        }
 
-        // Tính số token cần thêm
-        // (chuyển sang (long) để lấy phần nguyên)
-        long tokensToAdd = (long) (secondsSinceLastRefill * tokensPerSecond);
+        // Calculate tokens to add using precise arithmetic
+        long tokensToAdd = nanosSinceLastRefill / nanosPerToken;
 
         if (tokensToAdd > 0) {
-            // Nạp token mới, nhưng không vượt quá sức chứa
-            this.currentTokens = Math.min(capacity, currentTokens + tokensToAdd);
+            // IMPORTANT: Update last refill time by CONSUMING the exact time used
+            // This prevents losing time precision and ensures accurate refill timing
+            long nanosUsed = tokensToAdd * nanosPerToken;
+            lastRefillNanos += nanosUsed;
             
-            // Cập nhật mốc thời gian nạp
-            this.lastRefillNanos = now;
+            // Add tokens, but don't exceed capacity
+            currentTokens = Math.min(capacity, currentTokens + tokensToAdd);
         }
+    }
+
+    /**
+     * Validates constructor parameters.
+     */
+    private void validateParameters(long capacity, long tokensPerSecond) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("Capacity must be positive");
+        }
+        if (tokensPerSecond <= 0) {
+            throw new IllegalArgumentException("Tokens per second must be positive");
+        }
+    }
+
+    @Override
+    public String toString() {
+        return String.format("TokenBucket{capacity=%d, tokensPerSecond=%d, currentTokens=%d}",
+                capacity, tokensPerSecond, getCurrentTokens());
     }
 }
