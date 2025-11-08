@@ -1,9 +1,6 @@
 package com.nemisolv.ratelimiter.controller;
 
-import com.nemisolv.ratelimiter.service.RateLimiterService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,38 +10,26 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
-@RequiredArgsConstructor
 @Slf4j
 public class ApiController {
 
-    private final RateLimiterService rateLimiterService;
-
     /**
      * Global rate limited endpoint.
+     * Rate limiting is now handled by middleware, not in the controller.
      */
     @GetMapping("/resource")
     public ResponseEntity<Map<String, Object>> getResource() {
-        if (rateLimiterService.allowApiRequest()) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("message", "Resource accessed successfully");
-            response.put("timestamp", System.currentTimeMillis());
-            response.put("status", "allowed");
-            
-            return ResponseEntity.ok(response);
-        } else {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("error", "Rate limit exceeded");
-            errorResponse.put("message", "Global rate limit exceeded. Please try again later.");
-            errorResponse.put("timestamp", System.currentTimeMillis());
-            errorResponse.put("status", "rate_limited");
-            
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .body(errorResponse);
-        }
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Resource accessed successfully");
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("status", "allowed");
+        
+        return ResponseEntity.ok(response);
     }
 
     /**
-     * User-specific rate limited endpoint.
+     * User-specific endpoint.
+     * Rate limiting is now handled by middleware based on user ID from headers.
      */
     @GetMapping("/user-resource")
     public ResponseEntity<Map<String, Object>> getUserResource(
@@ -54,83 +39,35 @@ public class ApiController {
         // Use provided userId or extract from request (in real app, this would come from authentication)
         String effectiveUserId = userId != null ? userId : "anonymous";
         
-        if (rateLimiterService.allowUserRequest(effectiveUserId)) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("message", "User resource accessed successfully");
-            response.put("userId", effectiveUserId);
-            response.put("timestamp", System.currentTimeMillis());
-            response.put("status", "allowed");
-            
-            // Add rate limit info
-            RateLimiterService.TokenBucketStatus userStatus = rateLimiterService.getUserStatus(effectiveUserId);
-            if (userStatus != null) {
-                response.put("tokensRemaining", userStatus.getCurrentTokens());
-                response.put("tokensCapacity", userStatus.getCapacity());
-            }
-            
-            return ResponseEntity.ok(response);
-        } else {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("error", "Rate limit exceeded");
-            errorResponse.put("message", "User rate limit exceeded. Please try again later.");
-            errorResponse.put("userId", effectiveUserId);
-            errorResponse.put("timestamp", System.currentTimeMillis());
-            errorResponse.put("status", "rate_limited");
-            
-            // Add retry info
-            RateLimiterService.TokenBucketStatus userStatus = rateLimiterService.getUserStatus(effectiveUserId);
-            if (userStatus != null) {
-                errorResponse.put("retryAfterMs", userStatus.getTimeToNextToken());
-            }
-            
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .body(errorResponse);
-        }
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "User resource accessed successfully");
+        response.put("userId", effectiveUserId);
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("status", "allowed");
+        
+        return ResponseEntity.ok(response);
     }
 
     /**
-     * IP-specific rate limited endpoint.
+     * IP-specific endpoint.
+     * Rate limiting is now handled by middleware based on IP address.
      */
     @GetMapping("/ip-resource")
     public ResponseEntity<Map<String, Object>> getIpResource(HttpServletRequest request) {
-        String clientIp = rateLimiterService.extractClientIp(request);
+        String clientIp = extractClientIp(request);
         
-        if (rateLimiterService.allowIpRequest(clientIp)) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("message", "IP resource accessed successfully");
-            response.put("clientIp", clientIp);
-            response.put("timestamp", System.currentTimeMillis());
-            response.put("status", "allowed");
-            
-            // Add rate limit info
-            RateLimiterService.TokenBucketStatus ipStatus = rateLimiterService.getIpStatus(clientIp);
-            if (ipStatus != null) {
-                response.put("tokensRemaining", ipStatus.getCurrentTokens());
-                response.put("tokensCapacity", ipStatus.getCapacity());
-            }
-            
-            return ResponseEntity.ok(response);
-        } else {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("error", "Rate limit exceeded");
-            errorResponse.put("message", "IP rate limit exceeded. Please try again later.");
-            errorResponse.put("clientIp", clientIp);
-            errorResponse.put("timestamp", System.currentTimeMillis());
-            errorResponse.put("status", "rate_limited");
-            
-            // Add retry info
-            RateLimiterService.TokenBucketStatus ipStatus = rateLimiterService.getIpStatus(clientIp);
-            if (ipStatus != null) {
-                errorResponse.put("retryAfterMs", ipStatus.getTimeToNextToken());
-            }
-            
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .body(errorResponse);
-        }
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "IP resource accessed successfully");
+        response.put("clientIp", clientIp);
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("status", "allowed");
+        
+        return ResponseEntity.ok(response);
     }
 
     /**
-     * Combined rate limiting (global + user + IP).
+     * Protected resource endpoint.
+     * Rate limiting is now handled by middleware with multiple rules.
      */
     @GetMapping("/protected-resource")
     public ResponseEntity<Map<String, Object>> getProtectedResource(
@@ -138,119 +75,114 @@ public class ApiController {
             HttpServletRequest request) {
         
         String effectiveUserId = userId != null ? userId : "anonymous";
-        String clientIp = rateLimiterService.extractClientIp(request);
-        
-        // Check all rate limits
-        boolean globalAllowed = rateLimiterService.allowApiRequest();
-        boolean userAllowed = rateLimiterService.allowUserRequest(effectiveUserId);
-        boolean ipAllowed = rateLimiterService.allowIpRequest(clientIp);
-        
-        if (globalAllowed && userAllowed && ipAllowed) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("message", "Protected resource accessed successfully");
-            response.put("userId", effectiveUserId);
-            response.put("clientIp", clientIp);
-            response.put("timestamp", System.currentTimeMillis());
-            response.put("status", "allowed");
-            
-            return ResponseEntity.ok(response);
-        } else {
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("error", "Rate limit exceeded");
-            errorResponse.put("message", "Request blocked by rate limiting");
-            errorResponse.put("userId", effectiveUserId);
-            errorResponse.put("clientIp", clientIp);
-            errorResponse.put("timestamp", System.currentTimeMillis());
-            errorResponse.put("status", "rate_limited");
-            
-            // Add which limit was hit
-            Map<String, Boolean> limits = new HashMap<>();
-            limits.put("global", globalAllowed);
-            limits.put("user", userAllowed);
-            limits.put("ip", ipAllowed);
-            errorResponse.put("limits", limits);
-            
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .body(errorResponse);
-        }
-    }
-
-    /**
-     * Get rate limit status and metrics.
-     */
-    @GetMapping("/rate-limit-status")
-    public ResponseEntity<RateLimiterService.RateLimitStatus> getRateLimitStatus() {
-        RateLimiterService.RateLimitStatus status = rateLimiterService.getStatus();
-        return ResponseEntity.ok(status);
-    }
-
-    /**
-     * Get user-specific rate limit status.
-     */
-    @GetMapping("/user-rate-limit-status")
-    public ResponseEntity<Map<String, Object>> getUserRateLimitStatus(
-            @RequestParam(required = false) String userId) {
-        
-        String effectiveUserId = userId != null ? userId : "anonymous";
-        RateLimiterService.TokenBucketStatus userStatus = rateLimiterService.getUserStatus(effectiveUserId);
+        String clientIp = extractClientIp(request);
         
         Map<String, Object> response = new HashMap<>();
+        response.put("message", "Protected resource accessed successfully");
         response.put("userId", effectiveUserId);
-        
-        if (userStatus != null) {
-            response.put("status", userStatus);
-        } else {
-            response.put("message", "No rate limit data found for user");
-        }
+        response.put("clientIp", clientIp);
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("status", "allowed");
         
         return ResponseEntity.ok(response);
     }
 
     /**
-     * Get IP-specific rate limit status.
+     * Authentication endpoint for login.
+     * Rate limiting is handled by middleware for auth_type=login.
      */
-    @GetMapping("/ip-rate-limit-status")
-    public ResponseEntity<Map<String, Object>> getIpRateLimitStatus(HttpServletRequest request) {
-        String clientIp = rateLimiterService.extractClientIp(request);
-        RateLimiterService.TokenBucketStatus ipStatus = rateLimiterService.getIpStatus(clientIp);
+    @PostMapping("/auth/login")
+    public ResponseEntity<Map<String, Object>> login(@RequestBody Map<String, String> loginRequest) {
+        String username = loginRequest.get("username");
         
         Map<String, Object> response = new HashMap<>();
-        response.put("clientIp", clientIp);
+        response.put("message", "Login successful");
+        response.put("username", username);
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("status", "authenticated");
         
-        if (ipStatus != null) {
-            response.put("status", ipStatus);
-        } else {
-            response.put("message", "No rate limit data found for IP");
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Password reset endpoint.
+     * Rate limiting is handled by middleware for auth_type=password_reset.
+     */
+    @PostMapping("/auth/password-reset")
+    public ResponseEntity<Map<String, Object>> passwordReset(@RequestBody Map<String, String> resetRequest) {
+        String email = resetRequest.get("email");
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Password reset email sent");
+        response.put("email", email);
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("status", "reset_initiated");
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Messaging endpoint for sending messages.
+     * Rate limiting is handled by middleware based on message_type.
+     */
+    @PostMapping("/messaging/send")
+    public ResponseEntity<Map<String, Object>> sendMessage(
+            @RequestParam String messageType,
+            @RequestBody Map<String, Object> message) {
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Message sent successfully");
+        response.put("messageType", messageType);
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("status", "sent");
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Upload endpoint.
+     * Rate limiting is handled by middleware for POST /api/upload.
+     */
+    @PostMapping("/upload")
+    public ResponseEntity<Map<String, Object>> uploadFile() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "File uploaded successfully");
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("status", "uploaded");
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Search endpoint.
+     * Rate limiting is handled by middleware for /api/search.
+     */
+    @GetMapping("/search")
+    public ResponseEntity<Map<String, Object>> search(@RequestParam String query) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Search results");
+        response.put("query", query);
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("status", "completed");
+        
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Extracts client IP from HttpServletRequest.
+     * This is a helper method since we removed the dependency on RateLimiterService.
+     */
+    private String extractClientIp(HttpServletRequest request) {
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor != null && !xForwardedFor.isEmpty() && !"unknown".equalsIgnoreCase(xForwardedFor)) {
+            return xForwardedFor.split(",")[0].trim();
         }
-        
-        return ResponseEntity.ok(response);
-    }
 
-    /**
-     * Clear user rate limit data (admin endpoint).
-     */
-    @DeleteMapping("/user-rate-limit")
-    public ResponseEntity<Map<String, String>> clearUserRateLimit(@RequestParam String userId) {
-        rateLimiterService.clearUserData(userId);
-        
-        Map<String, String> response = new HashMap<>();
-        response.put("message", "User rate limit data cleared");
-        response.put("userId", userId);
-        
-        return ResponseEntity.ok(response);
-    }
+        String xRealIp = request.getHeader("X-Real-IP");
+        if (xRealIp != null && !xRealIp.isEmpty() && !"unknown".equalsIgnoreCase(xRealIp)) {
+            return xRealIp;
+        }
 
-    /**
-     * Clear IP rate limit data (admin endpoint).
-     */
-    @DeleteMapping("/ip-rate-limit")
-    public ResponseEntity<Map<String, String>> clearIpRateLimit(@RequestParam String ipAddress) {
-        rateLimiterService.clearIpData(ipAddress);
-        
-        Map<String, String> response = new HashMap<>();
-        response.put("message", "IP rate limit data cleared");
-        response.put("ipAddress", ipAddress);
-        
-        return ResponseEntity.ok(response);
+        return request.getRemoteAddr();
     }
 }

@@ -30,7 +30,7 @@ class TokenBucketTest {
         @DisplayName("Should consume token when available")
         void shouldConsumeTokenWhenAvailable() {
             assertTrue(tokenBucket.tryConsume());
-            assertEquals(9, tokenBucket.getCurrentTokens());
+            assertEquals(9, tokenBucket.getRefilledTokens());
         }
 
         @Test
@@ -42,21 +42,21 @@ class TokenBucketTest {
             }
 
             assertFalse(tokenBucket.tryConsume());
-            assertEquals(0, tokenBucket.getCurrentTokens());
+            assertEquals(0, tokenBucket.getRefilledTokens());
         }
 
         @Test
         @DisplayName("Should consume multiple tokens when available")
         void shouldConsumeMultipleTokensWhenAvailable() {
             assertTrue(tokenBucket.tryConsume(5));
-            assertEquals(5, tokenBucket.getCurrentTokens());
+            assertEquals(5, tokenBucket.getRefilledTokens());
         }
 
         @Test
         @DisplayName("Should reject multiple tokens when insufficient")
         void shouldRejectMultipleTokensWhenInsufficient() {
             assertFalse(tokenBucket.tryConsume(15));
-            assertEquals(10, tokenBucket.getCurrentTokens()); // Should remain unchanged
+            assertEquals(10, tokenBucket.getRefilledTokens()); // Should remain unchanged
         }
 
         @Test
@@ -80,13 +80,13 @@ class TokenBucketTest {
             for (int i = 0; i < 10; i++) {
                 bucket.tryConsume();
             }
-            assertEquals(0, bucket.getCurrentTokens());
+            assertEquals(0, bucket.getRefilledTokens());
 
             // Wait for refill (1 second should add 10 tokens)
             Thread.sleep(1100);
             
             assertTrue(bucket.tryConsume());
-            assertTrue(bucket.getCurrentTokens() > 0);
+            assertTrue(bucket.getRefilledTokens() > 0);
         }
 
         @Test
@@ -96,13 +96,13 @@ class TokenBucketTest {
             
             // Consume some tokens
             bucket.tryConsume(3);
-            assertEquals(2, bucket.getCurrentTokens());
+            assertEquals(2, bucket.getRefilledTokens());
 
             // Wait for refill
             Thread.sleep(1100);
             
             // Should not exceed capacity
-            assertEquals(5, bucket.getCurrentTokens());
+            assertEquals(5, bucket.getRefilledTokens());
         }
 
         @Test
@@ -112,15 +112,15 @@ class TokenBucketTest {
             
             // Consume all tokens
             bucket.tryConsume(100);
-            assertEquals(0, bucket.getCurrentTokens());
+            assertEquals(0, bucket.getRefilledTokens());
 
             // Wait 500ms - should get 5 tokens
             Thread.sleep(500);
-            assertEquals(5, bucket.getCurrentTokens());
+            assertEquals(5, bucket.getRefilledTokens());
 
             // Wait another 500ms - should get 5 more tokens
             Thread.sleep(500);
-            assertEquals(10, bucket.getCurrentTokens());
+            assertEquals(10, bucket.getRefilledTokens());
         }
     }
 
@@ -166,7 +166,7 @@ class TokenBucketTest {
             assertEquals(threadCount * requestsPerThread, totalConsumptions);
             
             // Current tokens should be within valid bounds
-            long currentTokens = bucket.getCurrentTokens();
+            long currentTokens = bucket.getRefilledTokens();
             assertTrue(currentTokens >= 0 && currentTokens <= bucket.getCapacity());
         }
 
@@ -190,7 +190,7 @@ class TokenBucketTest {
                                 bucket.tryConsume();
                             } else {
                                 // Status checking threads
-                                bucket.getCurrentTokens();
+                                bucket.getRefilledTokens();
                                 bucket.getTimeToNextToken();
                             }
                             operations.incrementAndGet();
@@ -210,7 +210,7 @@ class TokenBucketTest {
             assertEquals(2000, operations.get());
             
             // Bucket should still be in a valid state
-            long currentTokens = bucket.getCurrentTokens();
+            long currentTokens = bucket.getRefilledTokens();
             assertTrue(currentTokens >= 0 && currentTokens <= bucket.getCapacity());
         }
     }
@@ -240,7 +240,7 @@ class TokenBucketTest {
             
             assertEquals(100, bucket.getCapacity());
             assertEquals(25, bucket.getTokensPerSecond());
-            assertEquals(100, bucket.getCurrentTokens()); // Should start full
+            assertEquals(100, bucket.getRefilledTokens()); // Should start full
         }
     }
 
@@ -299,10 +299,10 @@ class TokenBucketTest {
             TokenBucket bucket = new TokenBucket(1000, 1000); // Very high rate
             
             bucket.tryConsume(1000);
-            assertEquals(0, bucket.getCurrentTokens());
+            assertEquals(0, bucket.getRefilledTokens());
             
             Thread.sleep(100); // Should refill ~100 tokens
-            assertTrue(bucket.getCurrentTokens() >= 90 && bucket.getCurrentTokens() <= 110);
+            assertTrue(bucket.getRefilledTokens() >= 90 && bucket.getRefilledTokens() <= 110);
         }
 
         @Test
@@ -311,10 +311,10 @@ class TokenBucketTest {
             TokenBucket bucket = new TokenBucket(10, 1); // Very low rate
             
             bucket.tryConsume(10);
-            assertEquals(0, bucket.getCurrentTokens());
+            assertEquals(0, bucket.getRefilledTokens());
             
             // Should not refill immediately
-            assertEquals(0, bucket.getCurrentTokens());
+            assertEquals(0, bucket.getRefilledTokens());
         }
 
         @Test

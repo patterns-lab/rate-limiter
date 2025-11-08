@@ -42,20 +42,9 @@ public class RateLimiterService {
     private final RateLimitConfig ipConfig;
 
     /**
-     * Configuration class for rate limits.
-     */
-    public static class RateLimitConfig {
-        private final long capacity;
-        private final long tokensPerSecond;
-
-        public RateLimitConfig(long capacity, long tokensPerSecond) {
-            this.capacity = capacity;
-            this.tokensPerSecond = tokensPerSecond;
-        }
-
-        public long getCapacity() { return capacity; }
-        public long getTokensPerSecond() { return tokensPerSecond; }
-    }
+         * Configuration class for rate limits.
+         */
+        public record RateLimitConfig(long capacity, long tokensPerSecond) {}
 
     /**
      * Initializes the RateLimiterService with default configurations.
@@ -66,7 +55,7 @@ public class RateLimiterService {
         this.userConfig = new RateLimitConfig(50, 5);      // 50 capacity, 5 tokens/sec per user
         this.ipConfig = new RateLimitConfig(30, 3);        // 30 capacity, 3 tokens/sec per IP
         
-        this.globalApiBucket = new TokenBucket(globalConfig.getCapacity(), globalConfig.getTokensPerSecond());
+        this.globalApiBucket = new TokenBucket(globalConfig.capacity(), globalConfig.tokensPerSecond());
     }
 
     /**
@@ -76,7 +65,7 @@ public class RateLimiterService {
         this.globalConfig = globalConfig;
         this.userConfig = userConfig;
         this.ipConfig = ipConfig;
-        this.globalApiBucket = new TokenBucket(globalConfig.getCapacity(), globalConfig.getTokensPerSecond());
+        this.globalApiBucket = new TokenBucket(globalConfig.capacity(), globalConfig.tokensPerSecond());
     }
 
     /**
@@ -90,11 +79,11 @@ public class RateLimiterService {
         boolean allowed = globalApiBucket.tryConsume();
         if (allowed) {
             allowedRequests.incrementAndGet();
-            log.debug("Global API request allowed. Tokens remaining: {}", globalApiBucket.getCurrentTokens());
+            log.debug("Global API request allowed. Tokens remaining: {}", globalApiBucket.getRefilledTokens());
         } else {
             rejectedRequests.incrementAndGet();
             log.warn("Global API request rate limited. Tokens remaining: {}, Time to next token: {}ms",
-                    globalApiBucket.getCurrentTokens(), globalApiBucket.getTimeToNextToken());
+                    globalApiBucket.getRefilledTokens(), globalApiBucket.getTimeToNextToken());
         }
         
         return allowed;
@@ -116,18 +105,18 @@ public class RateLimiterService {
         
         TokenBucket userBucket = userBuckets.computeIfAbsent(userId, id -> {
             log.debug("Created new token bucket for user: {}", id);
-            return new TokenBucket(userConfig.getCapacity(), userConfig.getTokensPerSecond());
+            return new TokenBucket(userConfig.capacity(), userConfig.tokensPerSecond());
         });
 
         boolean allowed = userBucket.tryConsume();
         if (allowed) {
             allowedRequests.incrementAndGet();
             log.debug("User request allowed for userId: {}. Tokens remaining: {}",
-                    userId, userBucket.getCurrentTokens());
+                    userId, userBucket.getRefilledTokens());
         } else {
             rejectedRequests.incrementAndGet();
             log.warn("User request rate limited for userId: {}. Tokens remaining: {}, Time to next token: {}ms",
-                    userId, userBucket.getCurrentTokens(), userBucket.getTimeToNextToken());
+                    userId, userBucket.getRefilledTokens(), userBucket.getTimeToNextToken());
         }
         
         return allowed;
@@ -149,18 +138,18 @@ public class RateLimiterService {
         
         TokenBucket ipBucket = ipBuckets.computeIfAbsent(ipAddress, ip -> {
             log.debug("Created new token bucket for IP: {}", ip);
-            return new TokenBucket(ipConfig.getCapacity(), ipConfig.getTokensPerSecond());
+            return new TokenBucket(ipConfig.capacity(), ipConfig.tokensPerSecond());
         });
 
         boolean allowed = ipBucket.tryConsume();
         if (allowed) {
             allowedRequests.incrementAndGet();
             log.debug("IP request allowed for ipAddress: {}. Tokens remaining: {}",
-                    ipAddress, ipBucket.getCurrentTokens());
+                    ipAddress, ipBucket.getRefilledTokens());
         } else {
             rejectedRequests.incrementAndGet();
             log.warn("IP request rate limited for ipAddress: {}. Tokens remaining: {}, Time to next token: {}ms",
-                    ipAddress, ipBucket.getCurrentTokens(), ipBucket.getTimeToNextToken());
+                    ipAddress, ipBucket.getRefilledTokens(), ipBucket.getTimeToNextToken());
         }
         
         return allowed;
@@ -201,7 +190,7 @@ public class RateLimiterService {
             totalRequests.get(),
             allowedRequests.get(),
             rejectedRequests.get(),
-            globalApiBucket.getCurrentTokens(),
+            globalApiBucket.getRefilledTokens(),
             userBuckets.size(),
             ipBuckets.size()
         );
@@ -219,7 +208,7 @@ public class RateLimiterService {
             return null;
         }
         return new TokenBucketStatus(
-            bucket.getCurrentTokens(),
+            bucket.getRefilledTokens(),
             bucket.getCapacity(),
             bucket.getTokensPerSecond(),
             bucket.getTimeToNextToken()
@@ -238,7 +227,7 @@ public class RateLimiterService {
             return null;
         }
         return new TokenBucketStatus(
-            bucket.getCurrentTokens(),
+            bucket.getRefilledTokens(),
             bucket.getCapacity(),
             bucket.getTokensPerSecond(),
             bucket.getTimeToNextToken()

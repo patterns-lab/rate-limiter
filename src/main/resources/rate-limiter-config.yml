@@ -1,0 +1,94 @@
+# Rate Limiting Configuration
+# Based on Lyft's open-source rate-limiting component format
+
+# Global API rate limiting
+- domain: api
+  descriptors:
+    - key: path
+      value: "*"
+  rate_limit:
+    unit: minute
+    requests_per_unit: 100
+
+# Authentication rate limiting
+- domain: auth
+  descriptors:
+    - key: auth_type
+      value: login
+  rate_limit:
+    unit: minute
+    requests_per_unit: 5
+
+# Password reset rate limiting
+- domain: auth
+  descriptors:
+    - key: auth_type
+      value: password_reset
+  rate_limit:
+    unit: hour
+    requests_per_unit: 3
+
+# Marketing messages rate limiting
+- domain: messaging
+  descriptors:
+    - key: message_type
+      value: marketing
+  rate_limit:
+    unit: day
+    requests_per_unit: 5
+
+# Transactional messages rate limiting
+- domain: messaging
+  descriptors:
+    - key: message_type
+      value: transactional
+  rate_limit:
+    unit: minute
+    requests_per_unit: 20
+
+# User-specific rate limiting
+- domain: user
+  descriptors:
+    - key: user_id
+      value: "*"
+  rate_limit:
+    unit: minute
+    requests_per_unit: 30
+
+# IP-based rate limiting
+- domain: ip
+  descriptors:
+    - key: ip_address
+      value: "*"
+  rate_limit:
+    unit: minute
+    requests_per_unit: 60
+
+# Premium user rate limiting (higher limits)
+- domain: user
+  descriptors:
+    - key: user_tier
+      value: premium
+  rate_limit:
+    unit: minute
+    requests_per_unit: 100
+
+# API endpoint specific rate limiting
+- domain: endpoint
+  descriptors:
+    - key: method
+      value: POST
+    - key: path
+      value: "/api/upload"
+  rate_limit:
+    unit: minute
+    requests_per_unit: 10
+
+# Search endpoint rate limiting
+- domain: endpoint
+  descriptors:
+    - key: path
+      value: "/api/search"
+  rate_limit:
+    unit: minute
+    requests_per_unit: 30

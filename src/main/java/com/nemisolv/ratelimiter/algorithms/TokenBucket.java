@@ -1,5 +1,7 @@
 package com.nemisolv.ratelimiter.algorithms;
 
+import lombok.Getter;
+
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -23,12 +25,22 @@ public class TokenBucket {
 
     /**
      * Maximum capacity of the bucket.
+     * -- GETTER --
+     *  Gets the bucket capacity.
+     *
+
      */
+    @Getter
     private final long capacity;
 
     /**
      * Number of tokens added to the bucket per second.
+     * -- GETTER --
+     *  Gets the refill rate in tokens per second.
+     *
+
      */
+    @Getter
     private final long tokensPerSecond;
 
     /**
@@ -99,11 +111,11 @@ public class TokenBucket {
     }
 
     /**
-     * Gets the current number of tokens in the bucket.
+     * Gets the current number of refilled tokens in the bucket.
      *
      * @return Current token count
      */
-    public long getCurrentTokens() {
+    public long getRefilledTokens() {
         lock.lock();
         try {
             refill();
@@ -113,22 +125,14 @@ public class TokenBucket {
         }
     }
 
-    /**
-     * Gets the bucket capacity.
-     *
-     * @return Maximum capacity
-     */
-    public long getCapacity() {
-        return capacity;
-    }
 
-    /**
-     * Gets the refill rate in tokens per second.
-     *
-     * @return Tokens per second
-     */
-    public long getTokensPerSecond() {
-        return tokensPerSecond;
+    public long getCurrentTokens() {
+        lock.lock();
+        try {
+            return currentTokens;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -201,6 +205,6 @@ public class TokenBucket {
     @Override
     public String toString() {
         return String.format("TokenBucket{capacity=%d, tokensPerSecond=%d, currentTokens=%d}",
-                capacity, tokensPerSecond, getCurrentTokens());
+                capacity, tokensPerSecond, getRefilledTokens());
     }
 }

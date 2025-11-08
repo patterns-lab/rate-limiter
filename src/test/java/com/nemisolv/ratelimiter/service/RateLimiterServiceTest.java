@@ -9,7 +9,6 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.when;
 
 class RateLimiterServiceTest {
 
@@ -376,8 +375,8 @@ class RateLimiterServiceTest {
             RateLimiterService.RateLimitConfig config = 
                 new RateLimiterService.RateLimitConfig(100, 10);
             
-            assertEquals(100, config.getCapacity());
-            assertEquals(10, config.getTokensPerSecond());
+            assertEquals(100, config.capacity());
+            assertEquals(10, config.tokensPerSecond());
         }
     }
 

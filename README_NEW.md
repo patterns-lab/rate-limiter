@@ -406,7 +406,7 @@ cd rate-limiter
 
 ### Pull Request Process
 
-1. Fork repository
+1. Fork the repository
 2. Create a feature branch
 3. Add tests for new functionality
 4. Ensure all tests pass
@@ -414,7 +414,7 @@ cd rate-limiter
 
 ## License
 
-This project is licensed under MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Support
 
